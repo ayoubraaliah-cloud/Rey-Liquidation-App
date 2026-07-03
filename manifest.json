@@ -1,0 +1,387 @@
+const $ = (id) => document.getElementById(id);
+
+let codeReader = null;
+let productImageUrl = "";
+let ownImageData = "";
+
+function val(id) {
+  return $(id).value.trim();
+}
+
+function setStatus(message, kind = "") {
+  $("status").textContent = message;
+  $("status").className = "status " + kind;
+}
+
+function money(value) {
+  const num = Number(String(value || "").replace(/[^\d.]/g, ""));
+  if (!Number.isFinite(num) || num <= 0) return "";
+  return num.toFixed(2).replace(/\.00$/, "");
+}
+
+function reyPriceFromRetail(retail, percent = 0.4) {
+  const n = Number(String(retail).replace(/[^\d.]/g, ""));
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return String(Math.ceil(n * percent));
+}
+
+function getLocalDb() {
+  return JSON.parse(localStorage.getItem("reyRetailSearchDbV7") || "{}");
+}
+
+function setLocalDb(db) {
+  localStorage.setItem("reyRetailSearchDbV7", JSON.stringify(db));
+}
+
+function saveProduct(silent = false) {
+  const barcode = val("barcode");
+  if (!barcode || !val("title")) {
+    if (!silent) alert("Barcode and title are required.");
+    return;
+  }
+
+  const db = getLocalDb();
+  db[barcode] = {
+    title: val("title"),
+    category: val("category"),
+    description: val("description"),
+    retailPrice: val("retailPrice"),
+    image: productImageUrl,
+    notes: val("lookupNotes")
+  };
+
+  setLocalDb(db);
+  if (!silent) setStatus("Saved to Rey Database on this device.", "good");
+}
+
+function applyProduct(product) {
+  $("title").value = product.title || "";
+  $("category").value = product.category || "Other";
+  $("description").value = product.description || "";
+  $("retailPrice").value = product.retailPrice || "";
+  $("reyPrice").value = reyPriceFromRetail(product.retailPrice || "", 0.4);
+  $("lookupNotes").value = product.notes || "";
+
+  productImageUrl = product.image || "";
+  if (productImageUrl) {
+    $("productImage").src = productImageUrl;
+    $("productImage").classList.remove("hidden");
+  } else {
+    $("productImage").classList.add("hidden");
+  }
+
+  generatePost("social");
+}
+
+async function lookupProduct() {
+  const barcode = val("barcode");
+  if (!barcode) {
+    alert("Scan or enter a barcode first.");
+    return;
+  }
+
+  const localProduct = getLocalDb()[barcode];
+  if (localProduct) {
+    applyProduct({
+      ...localProduct,
+      notes: `Source: Saved Rey Database\n${localProduct.notes || ""}`
+    });
+    setStatus("Found in saved Rey Database.", "good");
+    return;
+  }
+
+  setStatus("Searching free databases + retail search...", "");
+
+  try {
+    const response = await fetch(`/.netlify/functions/lookup?barcode=${encodeURIComponent(barcode)}`);
+    const data = await response.json();
+
+    if (!response.ok) throw new Error(data.error || "Lookup failed");
+
+    if (data.found) {
+      applyProduct(data.product);
+      saveProduct(true);
+      setStatus(`Found via ${data.product.source}.`, "good");
+    } else {
+      setStatus("No match found. Fill it once and save it.", "bad");
+      $("title").value = "Unknown Scanned Item";
+      $("category").value = "Other";
+      $("description").value = "Scanned retail item. Add details once and save it to Rey Database for future scans.";
+      $("retailPrice").value = "29";
+      $("reyPrice").value = "12";
+      $("lookupNotes").value = data.notes || "No match found.";
+      generatePost("social");
+    }
+  } catch (error) {
+    setStatus("Lookup failed. Check Netlify function deploy.", "bad");
+    $("lookupNotes").value = error.message;
+  }
+}
+
+async function startScanner() {
+  if (!window.ZXing) {
+    alert("Scanner library did not load. Refresh and make sure internet is connected.");
+    return;
+  }
+
+  try {
+    codeReader = new ZXing.BrowserMultiFormatReader();
+    $("video").classList.remove("hidden");
+    $("stopScan").classList.remove("hidden");
+    setStatus("Camera open. Point at barcode.", "");
+
+    const devices = await codeReader.listVideoInputDevices();
+    const backCamera = devices.find(d => /back|rear|environment/i.test(d.label)) || devices[devices.length - 1];
+
+    await codeReader.decodeFromVideoDevice(backCamera?.deviceId || null, "video", (result) => {
+      if (result) {
+        $("barcode").value = result.text;
+        stopScanner();
+        navigator.vibrate?.(80);
+        lookupProduct();
+      }
+    });
+  } catch (error) {
+    setStatus("Camera could not open. Use HTTPS and allow camera permission.", "bad");
+    alert("Camera could not open. Make sure the site is HTTPS and camera permission is allowed.");
+  }
+}
+
+function stopScanner() {
+  if (codeReader) {
+    codeReader.reset();
+    codeReader = null;
+  }
+  $("video").classList.add("hidden");
+  $("stopScan").classList.add("hidden");
+}
+
+function applyPercent(percent) {
+  if (!val("retailPrice")) {
+    alert("Retail price is missing.");
+    return;
+  }
+
+  $("reyPrice").value = reyPriceFromRetail(val("retailPrice"), percent);
+  generatePost("social");
+}
+
+function generateDescription(style) {
+  const title = val("title") || "This item";
+  const condition = val("condition");
+  const base = val("description");
+
+  let conditionLine = "";
+  if (condition === "New") conditionLine = "Brand new and ready to use.";
+  else if (condition === "Open Box") conditionLine = "Open box item. Packaging may have wear and item comes as shown.";
+  else if (condition === "Used - Good") conditionLine = "Pre-owned and in good usable condition.";
+  else if (condition === "Used - Fair") conditionLine = "Pre-owned with visible signs of use and priced accordingly.";
+  else conditionLine = "Sold for parts or repair only.";
+
+  let text = `${title}. ${conditionLine}`;
+  if (base) text += ` ${base}`;
+  if (style === "social") text += " Come check it out before it is gone!";
+  return text;
+}
+
+function generatePost(style = "social") {
+  const title = val("title") || "Item for Sale";
+  const retail = money(val("retailPrice"));
+  const price = money(val("reyPrice"));
+  const category = val("category");
+  const condition = val("condition");
+  const barcode = val("barcode");
+  const desc = generateDescription(style);
+
+  let lines = [];
+
+  if (style === "market") {
+    lines = [
+      title,
+      price ? `Price: $${price}` : "",
+      retail ? `Retail: around $${retail}` : "",
+      `Condition: ${condition}`,
+      category ? `Category: ${category}` : "",
+      barcode ? `UPC: ${barcode}` : "",
+      "",
+      desc,
+      "",
+      "Available at Rey Liquidation. Message us with any questions."
+    ];
+  } else if (style === "short") {
+    lines = [
+      `${title} — ${price ? "$" + price : "priced to sell"}`,
+      `${condition}. Available at Rey Liquidation.`
+    ];
+  } else {
+    const hashtags = [
+      "#ReyLiquidation",
+      "#deals",
+      "#warehousefinds",
+      "#resale",
+      "#bargainfinds",
+      category ? "#" + category.replace(/\s+/g, "").toLowerCase() : ""
+    ].filter(Boolean).join(" ");
+
+    lines = [
+      `📦 ${title}`,
+      price ? `💵 Rey Price: $${price}` : "",
+      retail ? `🏷️ Highest retail found: around $${retail}` : "",
+      `✨ Condition: ${condition}`,
+      category ? `📍 Category: ${category}` : "",
+      barcode ? `🔎 UPC: ${barcode}` : "",
+      "",
+      desc,
+      "",
+      "Available at Rey Liquidation. Message us with any questions.",
+      "",
+      hashtags
+    ];
+  }
+
+  $("output").value = lines.filter(Boolean).join("\n");
+}
+
+function saveDraft() {
+  if (!val("output")) generatePost("social");
+
+  const drafts = JSON.parse(localStorage.getItem("reyDraftsRetailV7") || "[]");
+  drafts.unshift({
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    barcode: val("barcode"),
+    title: val("title"),
+    category: val("category"),
+    condition: val("condition"),
+    retailPrice: val("retailPrice"),
+    reyPrice: val("reyPrice"),
+    description: val("description"),
+    lookupNotes: val("lookupNotes"),
+    output: val("output"),
+    productImageUrl,
+    ownImageData
+  });
+
+  localStorage.setItem("reyDraftsRetailV7", JSON.stringify(drafts));
+  renderDrafts();
+  alert("Draft saved.");
+}
+
+function renderDrafts() {
+  const drafts = JSON.parse(localStorage.getItem("reyDraftsRetailV7") || "[]");
+  const container = $("drafts");
+  container.innerHTML = "";
+
+  if (!drafts.length) {
+    container.innerHTML = `<p class="muted">No drafts yet.</p>`;
+    return;
+  }
+
+  drafts.forEach(d => {
+    const div = document.createElement("div");
+    div.className = "draft";
+    div.innerHTML = `
+      <strong>${d.title || "Untitled item"}</strong>
+      <small>${d.reyPrice ? "$" + d.reyPrice + " · " : ""}${new Date(d.createdAt).toLocaleString()}</small>
+      <div class="row">
+        <button class="ghost" data-open="${d.id}">Open</button>
+        <button class="danger" data-delete="${d.id}">Delete</button>
+      </div>
+    `;
+    container.appendChild(div);
+  });
+
+  container.querySelectorAll("[data-open]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const draft = JSON.parse(localStorage.getItem("reyDraftsRetailV7") || "[]").find(d => d.id === btn.dataset.open);
+      if (!draft) return;
+
+      $("barcode").value = draft.barcode || "";
+      $("title").value = draft.title || "";
+      $("category").value = draft.category || "Other";
+      $("condition").value = draft.condition || "New";
+      $("retailPrice").value = draft.retailPrice || "";
+      $("reyPrice").value = draft.reyPrice || "";
+      $("description").value = draft.description || "";
+      $("lookupNotes").value = draft.lookupNotes || "";
+      $("output").value = draft.output || "";
+
+      productImageUrl = draft.productImageUrl || "";
+      ownImageData = draft.ownImageData || "";
+
+      if (productImageUrl) {
+        $("productImage").src = productImageUrl;
+        $("productImage").classList.remove("hidden");
+      }
+
+      if (ownImageData) {
+        $("ownPreview").src = ownImageData;
+        $("ownPreview").classList.remove("hidden");
+      }
+
+      scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
+
+  container.querySelectorAll("[data-delete]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const filtered = JSON.parse(localStorage.getItem("reyDraftsRetailV7") || "[]").filter(d => d.id !== btn.dataset.delete);
+      localStorage.setItem("reyDraftsRetailV7", JSON.stringify(filtered));
+      renderDrafts();
+    });
+  });
+}
+
+function clearAll() {
+  ["barcode", "title", "retailPrice", "reyPrice", "description", "lookupNotes", "output"].forEach(id => $(id).value = "");
+  $("category").value = "Other";
+  $("condition").value = "New";
+  $("photo").value = "";
+  $("productImage").classList.add("hidden");
+  $("ownPreview").classList.add("hidden");
+  productImageUrl = "";
+  ownImageData = "";
+  setStatus("", "");
+}
+
+$("startScan").addEventListener("click", startScanner);
+$("stopScan").addEventListener("click", stopScanner);
+$("lookupBtn").addEventListener("click", lookupProduct);
+$("sampleBtn").addEventListener("click", () => {
+  $("barcode").value = "044600307912";
+  lookupProduct();
+});
+
+$("price35").addEventListener("click", () => applyPercent(0.35));
+$("price40").addEventListener("click", () => applyPercent(0.40));
+$("price45").addEventListener("click", () => applyPercent(0.45));
+
+$("saveProduct").addEventListener("click", () => saveProduct(false));
+$("genSocial").addEventListener("click", () => generatePost("social"));
+$("genMarket").addEventListener("click", () => generatePost("market"));
+$("genShort").addEventListener("click", () => generatePost("short"));
+
+$("copy").addEventListener("click", async () => {
+  if (!val("output")) generatePost("social");
+  await navigator.clipboard.writeText(val("output"));
+  $("copy").textContent = "Copied!";
+  setTimeout(() => $("copy").textContent = "Copy Post", 1200);
+});
+
+$("saveDraft").addEventListener("click", saveDraft);
+$("clear").addEventListener("click", clearAll);
+
+$("photo").addEventListener("change", () => {
+  const file = $("photo").files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    ownImageData = reader.result;
+    $("ownPreview").src = ownImageData;
+    $("ownPreview").classList.remove("hidden");
+  };
+  reader.readAsDataURL(file);
+});
+
+renderDrafts();

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Rey Liquidation App</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="/styles.css" />
+  <meta name="theme-color" content="#111827" />
+</head>
+<body>
+  <main class="app">
+    <header class="hero">
+      <p class="eyebrow">Rey Liquidation</p>
+      <h1>Retail Search App</h1>
+      <p>Scan a barcode, search retail sources, estimate the highest retail, and generate a post.</p>
+    </header>
+
+    <section class="card highlight">
+      <h2>Version 7</h2>
+      <p>This version searches free product databases first, then searches the web for retail pages from Target, Walmart, Amazon, Home Depot, Lowe’s, Best Buy, and more. It saves successful items locally so Rey builds its own product database over time.</p>
+    </section>
+
+    <section class="card">
+      <h2>1. Scan barcode</h2>
+      <div class="row">
+        <button id="startScan" class="primary">Scan Barcode</button>
+        <button id="stopScan" class="danger hidden">Stop Scanner</button>
+      </div>
+
+      <video id="video" class="scanner hidden" playsinline muted></video>
+
+      <label>Barcode / UPC</label>
+      <input id="barcode" placeholder="Barcode appears here" inputmode="numeric" />
+
+      <div class="row">
+        <button id="lookupBtn" class="primary">Search Retail Price</button>
+        <button id="sampleBtn" class="ghost">Test Clorox Sample</button>
+      </div>
+
+      <p id="status" class="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>2. Product details</h2>
+
+      <img id="productImage" class="product-img hidden" alt="Product image" />
+
+      <label>Product name</label>
+      <input id="title" placeholder="Auto-filled product title" />
+
+      <div class="grid">
+        <div>
+          <label>Highest retail found</label>
+          <input id="retailPrice" placeholder="Found or estimated retail" inputmode="decimal" />
+        </div>
+        <div>
+          <label>Rey price</label>
+          <input id="reyPrice" placeholder="Auto-calculated" inputmode="decimal" />
+        </div>
+      </div>
+
+      <div class="grid">
+        <div>
+          <label>Category</label>
+          <select id="category">
+            <option>Appliances</option>
+            <option>Baby</option>
+            <option>Beauty</option>
+            <option>Cleaning</option>
+            <option>Electronics</option>
+            <option>Food</option>
+            <option>Health</option>
+            <option>Home</option>
+            <option>Kitchen</option>
+            <option>Toys</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div>
+          <label>Condition</label>
+          <select id="condition">
+            <option selected>New</option>
+            <option>Open Box</option>
+            <option>Used - Good</option>
+            <option>Used - Fair</option>
+            <option>Parts Only</option>
+          </select>
+        </div>
+      </div>
+
+      <label>Description</label>
+      <textarea id="description" placeholder="Auto-filled description"></textarea>
+
+      <label>Retail search notes</label>
+      <textarea id="lookupNotes" placeholder="Stores and prices found"></textarea>
+
+      <label>Warehouse item photo</label>
+      <input id="photo" type="file" accept="image/*" capture="environment" />
+      <img id="ownPreview" class="own-img hidden" alt="Warehouse photo" />
+
+      <div class="row">
+        <button id="price35" class="ghost">35%</button>
+        <button id="price40" class="ghost">40%</button>
+        <button id="price45" class="ghost">45%</button>
+        <button id="saveProduct" class="primary">Save to Rey Database</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3. Generated post</h2>
+
+      <div class="row">
+        <button id="genSocial" class="primary">TikTok / Instagram</button>
+        <button id="genMarket" class="ghost">Marketplace</button>
+        <button id="genShort" class="ghost">Short Caption</button>
+      </div>
+
+      <textarea id="output" class="output" placeholder="Generated post appears here..."></textarea>
+
+      <div class="row">
+        <button id="copy" class="primary">Copy Post</button>
+        <button id="saveDraft" class="ghost">Save Draft</button>
+        <button id="clear" class="ghost">Clear</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Saved drafts</h2>
+      <div id="drafts"></div>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
